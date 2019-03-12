@@ -4,6 +4,26 @@ import PandocFilters
 
 PandocFilters.walk(x,y) =walk(x,y, "", Dict{String,Any}())
 
+function wraptree(T)
+  
+
+end
+# function compare_dicts(d1, d2)
+#   diff = setdiff(keys(d1), keys(d2))
+#   isempty(diff) || return diff
+#   for k in keys(d1)
+#     if d1[k] != d2[k]
+#       if typeof(d1[k]) != typeof(d2[k])
+#         println()
+#       if d1[k] isa AbstractDict && d2[k] isa AbstractDict
+#         return compare_dicts(d1[k],d2[k])
+#       end
+#       if d1[k] isa AbstractArray && d2[k] isa AbstractDict
+
+#     end
+#   end
+#   return []
+# end
 
 @testset "Types" begin
   rawpara = raw"""{
@@ -60,3 +80,26 @@ end
   @test j_manual == j_test_no_change
   
 end
+
+using PandocFilters
+using PandocFilters: walk, Plain, Null, Code, Str, _dictify, makeJuliaAST
+using Test, JSON
+str = open("test/MANUAL.JSON", "r") do f
+  read(f, String)
+end;
+j_manual = JSON.parse(str);
+AST = makeJuliaAST(j_manual);
+struct EmptyArray end
+dict = Dict{Any, Int}()
+
+for c in PandocFilters.Leaves(AST)
+  if c isa AbstractArray && length(c) == 0
+    c = EmptyArray()
+  end
+  dict[typeof(c)] = get(dict, typeof(c), 0) + 1
+end
+
+# super slow
+import LazyJSON
+j_manual_lazy = LazyJSON.parse(str);
+AST2 = makeJuliaAST(j_manual_lazy);

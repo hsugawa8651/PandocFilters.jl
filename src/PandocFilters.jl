@@ -9,28 +9,63 @@ AST serialized as JSON.
 """
 module PandocFilters
 
+using AbstractTrees
+import AbstractTrees: children, Leaves, treemap
+
+
 export walk, toJSONFilter
 
 using JSON
 
+using LightGraphs, MetaGraphs
+
+function build_graph!(G, root)
+  
+  add_vertex!(G)
+  v = nv(G)
+  set_prop!(G, v, :elt, root)
+  _build_graph!(G, root, v)
+end
+
+function _build_graph!(G, parent, vparent)
+  
+  for child in children(parent)
+    add_vertex!(G)
+    v = nv(G)
+    set_prop!(G, v, Symbol(typeof(child)), child)
+    add_edge!(G, vparent, v)
+    _build_graph!(G, child, v)
+  end
+end
+
+function wraptree(root)
+  G = MetaGraph(SimpleDiGraph())
+  build_graph!(G, root)
+  return G
+end
 
 """
 Type representing Pandoc elements.
 """
 abstract type PandocElement end
+
 abstract type Aux <: PandocElement end
 
 abstract type Block <: PandocElement end
+
 abstract type Inline <: PandocElement end
+
 abstract type MetaValue <: PandocElement end
 
 struct Meta <: Aux
   unMeta :: Dict{String, MetaValue}
 end
 
-struct Pandoc <: Aux
+
+struct Pandoc <: PandocElement
   meta :: Meta
   blocks :: Vector{Block}
+  api_version :: Vector{Int}
 end
 
 # Meta stuff
@@ -60,22 +95,72 @@ struct MetaBlocks <: MetaValue
 end
 
 # Helpers
-@enum ListNumberStyle DefaultStyle Example Decimal LowerRoman UpperRoman LowerAlpha UpperAlpha
-@enum ListNumberDelim DefaultDelim Period OneParen TwoParens
-@enum QuoteType SingleQuote DoubleQuote
-@enum Alignment AlignLeft AlignRight AlignCenter AlignDefault
-@enum MathType DisplayMath InlineMath
-@enum CitationMode AuthorInText SuppressAuthor NormalCitation
+abstract type ListNumberStyle <: Aux end
+for T in [:DefaultStyle, :Example, :Decimal, :LowerRoman, :UpperRoman, :LowerAlpha, :UpperAlpha]
+  eval( :( struct $T <: ListNumberStyle end ) )
+end
+
+abstract type ListNumberDelim <: Aux end
+for T in [:DefaultDelim, :Period, :OneParen, :TwoParens]
+  eval( :( struct $T <: ListNumberDelim end ) )
+end
+
+abstract type QuoteType <: Aux end
+for T in [:SingleQuote, :DoubleQuote]
+  eval( :( struct $T <: QuoteType end ) )
+end
+
+abstract type Alignment <: Aux end
+for T in [:AlignLeft, :AlignRight, :AlignCenter, :AlignDefault]
+  eval( :( struct $T <: Alignment end ) )
+end
+  
+abstract type MathType <: Aux end
+for T in [:DisplayMath, :InlineMath]
+  eval( :( struct $T <: MathType end ) )
+end
+
+abstract type CitationMode <: Aux end
+for T in [:AuthorInText, :SuppressAuthor, :NormalCitation]
+  eval( :( struct $T <: CitationMode end ) )
+end
+
 
 struct Format <: Aux
   contents :: String
 end
 
+
 struct Attr <: Aux
   id :: String
   classes :: Vector{String}
-  kv :: Dict{String, String}
+  # kv :: Dict{String, String}
+  kv :: Dict{String,Any}
 end
+
+function Attr(id, classes, kv::AbstractVector)
+  @assert length(kv) == 0
+  Attr(id, classes, Dict{String,Any}())
+end
+  # Base.convert(Attr, x::AbstractVector)
+  #   @assert length(x) == 3
+  #   id, classes, kv = vector
+  #   # id::String, classes::Vector{String}, kv::Vector{Any})
+  #   if kv isa AbstractDict
+  #     return Attr(id, classes, kv)
+  #   end
+  #   @assert length(kv)==0
+  #   Attr(id, classes, Dict{String,Any}())
+  # end
+
+function _dictify(A :: Attr)
+  if isempty(A.kv)
+    [A.id, A.classes, Any[]]
+  else
+    [A.id, A.classes, A.kv]
+  end
+end
+
 struct ListAttributes <: Aux
   number :: Int
   style :: ListNumberStyle
@@ -89,6 +174,10 @@ end
 struct Target <: Aux
   from :: String
   to :: String
+end
+
+function _dictify(T::Target)
+  [T.from, T.to]
 end
 
 struct Citation <: Aux
@@ -140,13 +229,15 @@ struct BulletList <: Block
 end
 
 struct DefinitionList <: Block
-  contents:: Vector{Tuple{Vector{Inline}, Vector{Block}}}
+  # contents:: Vector{Tuple{Vector{Inline}, Vector{Block}}}
+  contents:: Vector{Vector{Vector{Any}}}
 end
+
 
 struct Header <: Block
   level :: Int
   attr :: Attr
-  text :: Vector{Inline}
+  contents :: Vector{Inline}
 end
 
 struct HorizontalRule <: Block end
@@ -159,13 +250,13 @@ struct Table <: Block
   rows :: Vector{Vector{TableCell}}
 end
 
+
 struct Div <: Block
   attr :: Attr
   contents :: Vector{Block}
 end
 
 struct Null <: Block end
-
 
 # Inlines
 
@@ -209,8 +300,11 @@ struct Code <: Inline
 end
 
 struct Space <: Inline end
+
 struct SoftBreak <: Inline end
+
 struct HardBreak <: Inline end
+
 
 struct Math <: Inline
   type :: MathType
@@ -252,84 +346,177 @@ end
 #   for st in subtypes(PandocElement)
 #     for st2 in subtypes(st)
 #       println( string(st2)[l+1:end] => st2 , ",")
+#       for st3 in subtypes(st2)
+#         println( string(st3)[l+1:end] => st3 , ",")
+#       end
 #     end
 #   end
 #   println(")")
 #   end
 
 const ParseDict = Dict(
+  "Alignment" => Alignment,
+  "AlignCenter" => AlignCenter,
+  "AlignDefault" => AlignDefault,
+  "AlignLeft" => AlignLeft,
+  "AlignRight" => AlignRight,
   "Attr" => Attr,
-"Citation" => Citation,
-"Format" => Format,
-"ListAttributes" => ListAttributes,
-"Meta" => Meta,
-"Pandoc" => Pandoc,
-"TableCell" => TableCell,
-"Target" => Target,
-"BlockQuote" => BlockQuote,
-"BulletList" => BulletList,
-"CodeBlock" => CodeBlock,
-"DefinitionList" => DefinitionList,
-"Div" => Div,
-"Header" => Header,
-"HorizontalRule" => HorizontalRule,
-"LineBlock" => LineBlock,
-"Null" => Null,
-"OrderedList" => OrderedList,
-"Para" => Para,
-"Plain" => Plain,
-"RawBlock" => RawBlock,
-"Table" => Table,
-"Cite" => Cite,
-"Code" => Code,
-"Emph" => Emph,
-"HardBreak" => HardBreak,
-"Image" => Image,
-"Link" => Link,
-"Math" => Math,
-"Note" => Note,
-"Quoted" => Quoted,
-"RawInline" => RawInline,
-"SmallCaps" => SmallCaps,
-"SoftBreak" => SoftBreak,
-"Space" => Space,
-"Span" => Span,
-"Str" => Str,
-"Strikeout" => Strikeout,
-"Strong" => Strong,
-"Superscript" => Superscript,
-"MetaBlocks" => MetaBlocks,
-"MetaBool" => MetaBool,
-"MetaInlines" => MetaInlines,
-"MetaList" => MetaList,
-"MetaMap" => MetaMap,
-"MetaString" => MetaString
-)
-  
-for (str, T) in ParseDict
-  S = Symbol(str)
-  if fieldcount(T) > 1
-    eval( :( Base.convert(::$S, x::AbstractVector) = $S(x...) ) )
-    eval( :( $S(x) = $S(x...)  ))
-    # eval( :( Base.convert($S, x::AbstractVector) = $S(x...)  ))
+  "Citation" => Citation,
+  "CitationMode" => CitationMode,
+  "AuthorInText" => AuthorInText,
+  "NormalCitation" => NormalCitation,
+  "SuppressAuthor" => SuppressAuthor,
+  "Format" => Format,
+  "ListAttributes" => ListAttributes,
+  "ListNumberDelim" => ListNumberDelim,
+  "DefaultDelim" => DefaultDelim,
+  "OneParen" => OneParen,
+  "Period" => Period,
+  "TwoParens" => TwoParens,
+  "ListNumberStyle" => ListNumberStyle,
+  "Decimal" => Decimal,
+  "DefaultStyle" => DefaultStyle,
+  "Example" => Example,
+  "LowerAlpha" => LowerAlpha,
+  "LowerRoman" => LowerRoman,
+  "UpperAlpha" => UpperAlpha,
+  "UpperRoman" => UpperRoman,
+  "MathType" => MathType,
+  "DisplayMath" => DisplayMath,
+  "InlineMath" => InlineMath,
+  "Meta" => Meta,
+  "Pandoc" => Pandoc,
+  "QuoteType" => QuoteType,
+  "DoubleQuote" => DoubleQuote,
+  "SingleQuote" => SingleQuote,
+  "TableCell" => TableCell,
+  "Target" => Target,
+  "BlockQuote" => BlockQuote,
+  "BulletList" => BulletList,
+  "CodeBlock" => CodeBlock,
+  "DefinitionList" => DefinitionList,
+  "Div" => Div,
+  "Header" => Header,
+  "HorizontalRule" => HorizontalRule,
+  "LineBlock" => LineBlock,
+  "Null" => Null,
+  "OrderedList" => OrderedList,
+  "Para" => Para,
+  "Plain" => Plain,
+  "RawBlock" => RawBlock,
+  "Table" => Table,
+  "Cite" => Cite,
+  "Code" => Code,
+  "Emph" => Emph,
+  "HardBreak" => HardBreak,
+  "Image" => Image,
+  "Link" => Link,
+  "Math" => Math,
+  "Note" => Note,
+  "Quoted" => Quoted,
+  "RawInline" => RawInline,
+  "SmallCaps" => SmallCaps,
+  "SoftBreak" => SoftBreak,
+  "Space" => Space,
+  "Span" => Span,
+  "Str" => Str,
+  "Strikeout" => Strikeout,
+  "Strong" => Strong,
+  "Superscript" => Superscript,
+  "MetaBlocks" => MetaBlocks,
+  "MetaBool" => MetaBool,
+  "MetaInlines" => MetaInlines,
+  "MetaList" => MetaList,
+  "MetaMap" => MetaMap,
+  "MetaString" => MetaString,
+  )
+
+import Base.convert
+function Base.convert(::Type{T}, x::AbstractVector) where {T <: PandocElement}
+  try
+    fieldcount(T) == 1 ? T(x)  : T(x...)
+  catch E
+    println("Error converting $x to $T")
+    rethrow(E)
   end
 end
+
+
+# function Base.iterate(x::T, state=1) where {T <: PandocElement}
+#   n = fieldcount(T) 
+#   n < state && return nothing
+#   return getproperty(x, fieldnames(T)[state]), state+1
+# end
+
+# function Base.getindex(x::T, i::Int) where {T <: PandocElement}
+#   getproperty(x, fieldnames(T)[i])
+# end
+
+# Base.IteratorSize(::Type{T}) where {T <: PandocElement} = HasLength()
+# length(x::T) where {T <: PandocElement} = fieldcount(T) 
+
 
 const StringDict = Dict( value => key for (key, value) in ParseDict)
 
-function _vector(x :: PandocElement)
-  vec = []
-  for f in fieldnames(typeof(x))
-    push!(vec, getproperty(x, f))
+
+# _vector(x::Any) = x
+# function _vector(x :: PandocElement)
+#   vec = []
+#   for f in fieldnames(typeof(x))
+#     push!(vec, getproperty(x, f))
+#   end
+#   vec
+# end
+
+function children(x::PandocElement)
+  T = typeof(x)
+  if fieldcount(T) == 0
+    return ()
+  else
+    return [ getproperty(x, f) for f in fieldnames(T) ]
   end
-  vec
 end
 
+# function transform(x, f::Function)
+#   T = typeof(x)
+#   y = f(x)
+#   if x != y
+#     return y #modified x, done
+#   elseif x isa AbstractVector # recurse deeper
+#   #   return [ transform(z, f) for z in x ]
+#   # elseif x isa PandocElement 
+#   #   return T([ transform(z, f) for z in _vector(x)]...)
+#   elseif x isa AbstractVector # recurse deeper
+#     return [ transform(z, f) for z in x ]
+#   elseif x isa PandocElement 
+#     return T([ transform(z, f) for z in x]...)
+#   else
+#     return x
+#   end
+# end
+
+
+
 function _dictify(x :: Any)
-  throw(error("Uncaught _dictify"))
+  throw(error("Uncaught _dictify $x"))
 end
 
 _dictify(x :: String) = x
+_dictify(x :: Int) = x
+_dictify(x :: Float64) = x
+
+function _dictify(P :: Pandoc)
+  Dict("blocks" => _dictify(P.blocks), "pandoc-api-version" => P.api_version, "meta" => _dictify(P.meta))
+end
+
+function _dictify(M :: Meta)
+  Dict( key => _dictify(value) for (key, value) in M.unMeta)
+end
+
+function _dictify(x :: AbstractDict)
+  Dict( key => _dictify(value) for (key, value) in x)
+end
+
 function _dictify(x :: AbstractArray)
   _dictify.(x)
 end
@@ -340,34 +527,51 @@ function _dictify(x :: PandocElement)
   if n == 0
     return Dict( "t" => StringDict[T])
   elseif n == 1
-    return Dict( "t" => StringDict[T], "c" => _dictify(_vector(x)[]))
+    return Dict( "t" => StringDict[T], "c" => _dictify(children(x)[]))
   else
-    return Dict( "t" => StringDict[T], "c" => [ _dictify(y) for y in _vector(x)])
+    return Dict( "t" => StringDict[T], "c" => [ _dictify(y) for y in children(x)])
   end
 end
 
 
-makeJuliaAST(x :: Any) = x
+function makeJuliaAST(dict, format = ""; transform::Function = (elt, format, meta) -> elt)
+  api = convert(Vector{Int}, dict["pandoc-api-version"])
+  meta = Meta(_makeJuliaAST(dict["meta"], x -> transform(x, format, :no_meta_yet)))
+  blocks = _makeJuliaAST(dict["blocks"], x -> transform(x, format, meta))
+  return Pandoc(meta, blocks, api)
+end
 
-makeJuliaAST(x :: AbstractArray) = makeJuliaAST.(x)
+_makeJuliaAST(x :: Any, f) = x
 
-function makeJuliaAST(dict :: AbstractDict)
-  if !haskey(dict, "t")
-    return Dict( key => makeJuliaAST(value) for (key, value) in dict)
+function _makeJuliaAST(x :: Vector{T}, f) where {T}
+  array = T[]
+  for z in x
+    out = _makeJuliaAST(z, f)
+    if out !== nothing
+      push!(array, out)
+    end
+  end
+  array
+end
+
+function _makeJuliaAST(dict :: AbstractDict, f)
+  if !haskey(dict, "t")    
+    return Dict( key => _makeJuliaAST(value, f) for (key, value) in dict)
   end
   T = ParseDict[ dict["t"]]
   n = fieldcount(T)
 
   if !haskey(dict, "c")
     @assert n == 0
-    return T()
+    return f(T())
   end
-  contents = makeJuliaAST(dict["c"])
+  contents = _makeJuliaAST(dict["c"], f)
+  contents === nothing && return nothing
   if n == 1
-    return T(contents)
+    return f(T(contents))
   else
     try
-      return T(contents...)
+      return f(T(contents...))
     catch E
       println("Tried to splat construct T=$T")
       println("With contents=$contents")
@@ -414,24 +618,8 @@ function walk(dict :: AbstractDict, action :: Function, format, meta)
   #   dict[k] = walk(dict[k], action, format, meta)
   # end
   # return dict
-  typ = dict["t"]
-  T = ParseDict[typ]
-  # parsed = Base.Meta.parse(typ)
-  # @show parsed
-  # @show dump(parsed)
 
-  # T = eval(parsed)
-  if !haskey(dict, "c")
-    return T()
-  end
-
-  contents = walk(dict["c"], action, format, meta)
-  # if contents isa AbstractArray
-  #   return T(contents...)
-  # else
-  return T(contents)
-  # end
-  # Dict(key=>walk(value,action, format, meta) for (key,value) in dict)
+  Dict(key=>walk(value,action, format, meta) for (key,value) in dict)
 end
 
 
