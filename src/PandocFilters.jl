@@ -13,11 +13,323 @@ export walk, toJSONFilter
 
 using JSON
 
+
 """
 Type representing Pandoc elements.
 """
 abstract type PandocElement end
+abstract type Aux <: PandocElement end
 
+abstract type Block <: PandocElement end
+abstract type Inline <: PandocElement end
+abstract type MetaValue end
+
+struct Meta <: Aux
+  unMeta :: Dict{String, MetaValue}
+end
+
+struct Pandoc <: Aux
+  meta :: Meta
+  blocks :: Vector{Block}
+end
+
+# Meta stuff
+
+struct MetaMap <: MetaValue
+  contents :: Dict{String, MetaValue}
+end
+
+struct MetaList <: MetaValue
+  contents :: Vector{MetaValue}
+end
+
+struct MetaBool <: MetaValue
+  contents :: Bool
+end
+
+struct MetaString <: MetaValue
+  contents :: String
+end
+
+struct MetaInlines <: MetaValue
+  contents :: Vector{Inline}
+end
+
+struct MetaBlocks <: MetaValue
+  contents :: Vector{Block}
+end
+
+# Helpers
+@enum ListNumberStyle DefaultStyle Example Decimal LowerRoman UpperRoman LowerAlpha UpperAlpha
+@enum ListNumberDelim DefaultDelim Period OneParen TwoParens
+@enum QuoteType SingleQuote DoubleQuote
+@enum Alignment AlignLeft AlignRight AlignCenter AlignDefault
+@enum MathType DisplayMath InlineMath
+@enum CitationMode AuthorInText SuppressAuthor NormalCitation
+
+struct Format <: Aux
+  contents :: String
+end
+
+struct Attr <: Aux
+  id :: String
+  classes :: Vector{String}
+  kv :: Dict{String, String}
+end
+struct ListAttributes <: Aux
+  number :: Int
+  style :: ListNumberStyle
+  delim :: ListNumberDelim
+end
+
+struct TableCell <: Aux
+  contents :: Vector{Block}
+end
+
+struct Target <: Aux
+  from :: String
+  to :: String
+end
+
+struct Citation <: Aux
+  citationID :: String
+  citationPrefix :: Vector{Inline}
+  citationSuffix :: Vector{Inline}
+  citationMode :: CitationMode
+  citationNoteNum :: Int
+  citationHash :: Int
+end
+
+
+# Constructors for block elements
+
+
+struct Plain <: Block
+  contents :: Vector{Inline}
+end
+
+struct Para <: Block
+  contents :: Vector{Inline}
+end
+
+struct LineBlock <: Block
+  contents :: Vector{Vector{Inline}}
+end
+
+struct CodeBlock <: Block
+  attr :: Attr
+  contents :: String
+end
+
+struct RawBlock <: Block
+  format :: Format
+  contents :: String
+end
+
+struct BlockQuote <: Block
+  contents :: Vector{Block}
+end
+
+struct OrderedList <: Block
+  attributes :: ListAttributes
+  contents :: Vector{Vector{Block}}
+end
+
+struct BulletList <: Block
+  contents :: Vector{Vector{Block}}
+end
+
+struct DefinitionList <: Block
+  contents:: Vector{Tuple{Vector{Inline}, Vector{Block}}}
+end
+
+struct Header <: Block
+  level :: Int
+  attr :: Attr
+  text :: Vector{Inline}
+end
+
+struct HorizontalRule <: Block end
+
+struct Table <: Block
+  caption :: Vector{Inline}
+  column_alignment :: Vector{Alignment}
+  column_relative_widths :: Vector{Float64}
+  column_headers :: Vector{TableCell}
+  rows :: Vector{Vector{TableCell}}
+end
+
+struct Div <: Block
+  attr :: Attr
+  contents :: Vector{Block}
+end
+
+struct Null <: Block end
+
+
+# Inlines
+
+struct Str <: Inline
+  contents :: String
+end
+
+struct Emph <: Inline
+  contents :: Vector{Inline}
+end
+
+struct Strong <: Inline
+  contents :: Vector{Inline}
+end
+
+struct Strikeout <: Inline
+  contents :: Vector{Inline}
+end
+
+struct Superscript <: Inline
+  contents :: Vector{Inline}
+end
+
+struct SmallCaps <: Inline
+  contents :: Vector{Inline}
+end
+
+struct Quoted <: Inline
+  type :: QuoteType
+  contents :: Vector{Inline}
+end
+
+struct Cite <: Inline
+  citation :: Vector{Citation}
+  contents :: Vector{Inline}
+end 
+
+struct Code <: Inline
+  attr :: Attr
+  contents :: String
+end
+
+struct Space <: Inline end
+struct SoftBreak <: Inline end
+struct HardBreak <: Inline end
+
+struct Math <: Inline
+  type :: MathType
+  contents :: String
+end
+
+struct RawInline <: Inline
+  format :: Format
+  contents :: String
+end
+
+struct Link <: Inline
+  attr :: Attr
+  alt_text :: Vector{Inline}
+  target :: Target
+end
+
+struct Image <: Inline
+  attr :: Attr
+  alt_text :: Vector{Inline}
+  target :: Target
+end
+
+struct Note <: Inline
+  contents :: Vector{Block}
+end
+
+struct Span <: Inline
+  attr :: Attr
+  contents :: Vector{Inline}
+end
+
+
+
+# @eval PandocFilters begin
+#   println("Dict(")
+#   using InteractiveUtils
+#   l = length("PandocFilters.")
+#   for st in subtypes(PandocElement)
+#     for st2 in subtypes(st)
+#       println( string(st2)[l+1:end] => st2 , ",")
+#     end
+#   end
+#   println(")")
+#   end
+
+const ParseDict = Dict(
+  "Attr" => Attr,
+  "Citation" => Citation,
+  "Format" => Format,
+  "ListAttributes" => ListAttributes,
+  "Meta" => Meta,
+  "Pandoc" => Pandoc,
+  "TableCell" => TableCell,
+  "Target" => Target,
+  "BlockQuote" => BlockQuote,
+  "BulletList" => BulletList,
+  "CodeBlock" => CodeBlock,
+  "DefinitionList" => DefinitionList,
+  "Div" => Div,
+  "Header" => Header,
+  "HorizontalRule" => HorizontalRule,
+  "LineBlock" => LineBlock,
+  "Null" => Null,
+  "OrderedList" => OrderedList,
+  "Para" => Para,
+  "Plain" => Plain,
+  "RawBlock" => RawBlock,
+  "Table" => Table,
+  "Cite" => Cite,
+  "Code" => Code,
+  "Emph" => Emph,
+  "HardBreak" => HardBreak,
+  "Image" => Image,
+  "Link" => Link,
+  "Math" => Math,
+  "Note" => Note,
+  "Quoted" => Quoted,
+  "RawInline" => RawInline,
+  "SmallCaps" => SmallCaps,
+  "SoftBreak" => SoftBreak,
+  "Space" => Space,
+  "Span" => Span,
+  "Str" => Str,
+  "Strikeout" => Strikeout,
+  "Strong" => Strong,
+  "Superscript" => Superscript
+  )
+
+const StringDict = Dict( value => key for (key, value) in ParseDict)
+
+function _vector(x :: PandocElement)
+  vec = []
+  for f in fieldnames(typeof(x))
+    push!(vec, getproperty(x, f))
+  end
+  vec
+end
+
+function _dictify(x :: Any)
+  throw(error("Uncaught _dictify"))
+end
+
+_dictify(x :: String) = x
+function _dictify(x :: AbstractArray)
+  _dictify.(x)
+end
+
+function _dictify(x :: PandocElement)
+  T = typeof(x)
+  n = fieldcount(T)
+  if n == 0
+    return Dict( "t" => StringDict[T])
+  elseif n == 1
+    return Dict( "t" => StringDict[T], "c" => _dictify(_vector(x)[]))
+  else
+    return Dict( "t" => StringDict[T], "c" => [ _dictify(y) for y in _vector(x)])
+  end
+end
 
 """
 Function walk will walk `Pandoc` document abstract source tree (AST) and apply filter function on each elemnet of the document AST.
@@ -56,8 +368,26 @@ function walk(dict :: AbstractDict, action :: Function, format, meta)
   #   dict[k] = walk(dict[k], action, format, meta)
   # end
   # return dict
-  Dict(key=>walk(value,action, format, meta) for (key,value) in dict)
+  typ = dict["t"]
+  T = ParseDict[typ]
+  # parsed = Base.Meta.parse(typ)
+  # @show parsed
+  # @show dump(parsed)
+
+  # T = eval(parsed)
+  if !haskey(dict, "c")
+    return T()
+  end
+
+  contents = walk(dict["c"], action, format, meta)
+  # if contents isa AbstractArray
+  #   return T(contents...)
+  # else
+  return T(contents)
+  # end
+  # Dict(key=>walk(value,action, format, meta) for (key,value) in dict)
 end
+
 
 """
 Converts an action or a list of actions into a filter that reads a JSON-formatted
@@ -114,41 +444,43 @@ function elt(eltType, numargs)
       end
     return fun
 end
-# Constructors for block elements
 
-Plain = elt("Plain", 1)
-Para = elt("Para", 1)
-CodeBlock = elt("CodeBlock", 2)
-RawBlock = elt("RawBlock", 2)
-BlockQuote = elt("BlockQuote", 1)
-OrderedList = elt("OrderedList", 2)
-BulletList = elt("BulletList", 1)
-DefinitionList = elt("DefinitionList", 1)
-Header = elt("Header", 3)
-HorizontalRule = elt("HorizontalRule", 0)
-Table = elt("Table", 5)
-Div = elt("Div", 2)
-Null = elt("Null", 0)
 
-# Constructors for inline elements
 
-Str = elt("Str", 1)
-Emph = elt("Emph", 1)
-Strong = elt("Strong", 1)
-Strikeout = elt("Strikeout", 1)
-Superscript = elt("Superscript", 1)
-Subscript = elt("Subscript", 1)
-SmallCaps = elt("SmallCaps", 1)
-Quoted = elt("Quoted", 2)
-Cite = elt("Cite", 2)
-Code = elt("Code", 2)
-Space = elt("Space", 0)
-LineBreak = elt("LineBreak", 0)
-Math = elt("Math", 2)
-RawInline = elt("RawInline", 2)
-Link = elt("Link", 3)
-Image = elt("Image", 3)
-Note = elt("Note", 1)
-SoftBreak = elt("SoftBreak", 0)
-Span = elt("Span", 2)
+
+# Plain = elt("Plain", 1)
+# Para = elt("Para", 1)
+# CodeBlock = elt("CodeBlock", 2)
+# RawBlock = elt("RawBlock", 2)
+# BlockQuote = elt("BlockQuote", 1)
+# OrderedList = elt("OrderedList", 2)
+# BulletList = elt("BulletList", 1)
+# DefinitionList = elt("DefinitionList", 1)
+# Header = elt("Header", 3)
+# HorizontalRule = elt("HorizontalRule", 0)
+# Table = elt("Table", 5)
+# Div = elt("Div", 2)
+# Null = elt("Null", 0)
+
+# # Constructors for inline elements
+
+# Str = elt("Str", 1)
+# Emph = elt("Emph", 1)
+# Strong = elt("Strong", 1)
+# Strikeout = elt("Strikeout", 1)
+# Superscript = elt("Superscript", 1)
+# Subscript = elt("Subscript", 1)
+# SmallCaps = elt("SmallCaps", 1)
+# Quoted = elt("Quoted", 2)
+# Cite = elt("Cite", 2)
+# Code = elt("Code", 2)
+# Space = elt("Space", 0)
+# LineBreak = elt("LineBreak", 0)
+# Math = elt("Math", 2)
+# RawInline = elt("RawInline", 2)
+# Link = elt("Link", 3)
+# Image = elt("Image", 3)
+# Note = elt("Note", 1)
+# SoftBreak = elt("SoftBreak", 0)
+# Span = elt("Span", 2)
 end # module
