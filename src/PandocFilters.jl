@@ -22,7 +22,7 @@ abstract type Aux <: PandocElement end
 
 abstract type Block <: PandocElement end
 abstract type Inline <: PandocElement end
-abstract type MetaValue end
+abstract type MetaValue <: PandocElement end
 
 struct Meta <: Aux
   unMeta :: Dict{String, MetaValue}
@@ -259,46 +259,61 @@ end
 
 const ParseDict = Dict(
   "Attr" => Attr,
-  "Citation" => Citation,
-  "Format" => Format,
-  "ListAttributes" => ListAttributes,
-  "Meta" => Meta,
-  "Pandoc" => Pandoc,
-  "TableCell" => TableCell,
-  "Target" => Target,
-  "BlockQuote" => BlockQuote,
-  "BulletList" => BulletList,
-  "CodeBlock" => CodeBlock,
-  "DefinitionList" => DefinitionList,
-  "Div" => Div,
-  "Header" => Header,
-  "HorizontalRule" => HorizontalRule,
-  "LineBlock" => LineBlock,
-  "Null" => Null,
-  "OrderedList" => OrderedList,
-  "Para" => Para,
-  "Plain" => Plain,
-  "RawBlock" => RawBlock,
-  "Table" => Table,
-  "Cite" => Cite,
-  "Code" => Code,
-  "Emph" => Emph,
-  "HardBreak" => HardBreak,
-  "Image" => Image,
-  "Link" => Link,
-  "Math" => Math,
-  "Note" => Note,
-  "Quoted" => Quoted,
-  "RawInline" => RawInline,
-  "SmallCaps" => SmallCaps,
-  "SoftBreak" => SoftBreak,
-  "Space" => Space,
-  "Span" => Span,
-  "Str" => Str,
-  "Strikeout" => Strikeout,
-  "Strong" => Strong,
-  "Superscript" => Superscript
-  )
+"Citation" => Citation,
+"Format" => Format,
+"ListAttributes" => ListAttributes,
+"Meta" => Meta,
+"Pandoc" => Pandoc,
+"TableCell" => TableCell,
+"Target" => Target,
+"BlockQuote" => BlockQuote,
+"BulletList" => BulletList,
+"CodeBlock" => CodeBlock,
+"DefinitionList" => DefinitionList,
+"Div" => Div,
+"Header" => Header,
+"HorizontalRule" => HorizontalRule,
+"LineBlock" => LineBlock,
+"Null" => Null,
+"OrderedList" => OrderedList,
+"Para" => Para,
+"Plain" => Plain,
+"RawBlock" => RawBlock,
+"Table" => Table,
+"Cite" => Cite,
+"Code" => Code,
+"Emph" => Emph,
+"HardBreak" => HardBreak,
+"Image" => Image,
+"Link" => Link,
+"Math" => Math,
+"Note" => Note,
+"Quoted" => Quoted,
+"RawInline" => RawInline,
+"SmallCaps" => SmallCaps,
+"SoftBreak" => SoftBreak,
+"Space" => Space,
+"Span" => Span,
+"Str" => Str,
+"Strikeout" => Strikeout,
+"Strong" => Strong,
+"Superscript" => Superscript,
+"MetaBlocks" => MetaBlocks,
+"MetaBool" => MetaBool,
+"MetaInlines" => MetaInlines,
+"MetaList" => MetaList,
+"MetaMap" => MetaMap,
+"MetaString" => MetaString
+)
+  
+for (str, T) in ParseDict
+  S = Symbol(str)
+  if fieldcount(T) > 1
+    eval( :( Base.convert(::$S, x::AbstractVector) = $S(x...) ) )
+    eval( :( $S(x) = $S(x...)  ))
+    # eval( :( Base.convert($S, x::AbstractVector) = $S(x...)  ))
+  end
+end
 
 const StringDict = Dict( value => key for (key, value) in ParseDict)
 
@@ -330,6 +345,37 @@ function _dictify(x :: PandocElement)
     return Dict( "t" => StringDict[T], "c" => [ _dictify(y) for y in _vector(x)])
   end
 end
+
+
+makeJuliaAST(x :: Any) = x
+
+makeJuliaAST(x :: AbstractArray) = makeJuliaAST.(x)
+
+function makeJuliaAST(dict :: AbstractDict)
+  if !haskey(dict, "t")
+    return Dict( key => makeJuliaAST(value) for (key, value) in dict)
+  end
+  T = ParseDict[ dict["t"]]
+  n = fieldcount(T)
+
+  if !haskey(dict, "c")
+    @assert n == 0
+    return T()
+  end
+  contents = makeJuliaAST(dict["c"])
+  if n == 1
+    return T(contents)
+  else
+    try
+      return T(contents...)
+    catch E
+      println("Tried to splat construct T=$T")
+      println("With contents=$contents")
+      rethrow(E)
+    end
+  end
+end
+
 
 """
 Function walk will walk `Pandoc` document abstract source tree (AST) and apply filter function on each elemnet of the document AST.
