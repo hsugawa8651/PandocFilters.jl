@@ -20,7 +20,7 @@ Returns a modified tree.
 
   action must be a function which takes four arguments, `tag, content, format, meta`,
   and should return
-  
+
   * `nothing` to leave the element unchanged
   * `[]` to delete the element
   * A Pandoc element to replace the element
@@ -64,9 +64,9 @@ end
 
 """
 Converts an action or a list of actions into a filter that reads a JSON-formatted
-pandoc document from stdin, transforms it by walk!ing the tree
+pandoc document from Base.stdin, transforms it by walk!ing the tree
 with the actions, and returns a new JSON-formatted pandoc document
-to stdout.  The argument is a list of functions action(key, value, format, meta),
+to Base.stdout.  The argument is a list of functions action(key, value, format, meta),
 where key is the type of the pandoc object (e.g. "Str", "Para"),
 value is the contents of the object (e.g. a string for "Str",
 a list of inline elements for "Para"), format is the target
@@ -83,7 +83,7 @@ function filter(action::Function)
 end
 
 function filter(actions::Array{Function})
-  doc = JSON.parse(STDIN)
+  doc = JSON.parse(Base.stdin)
   format = (length(ARGS) <= 0) ? "" : ARGS[1]
   if "meta" in doc
     meta = doc["meta"]
@@ -96,7 +96,7 @@ function filter(actions::Array{Function})
   for action in actions
     doc = walk!(doc, action, format, meta)
   end
-  JSON.print(STDOUT, doc)
+  JSON.print(Base.stdout, doc)
 end
 
 function AST_filter!(doc, action; format = "")
