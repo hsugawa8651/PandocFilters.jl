@@ -10,6 +10,13 @@ AST serialized as JSON.
 module PandocFilters
 
 export walk!, toJSONFilter, AST_filter!
+export Plain, Para, CodeBlock, RawBlock
+export BlockQuote, OrderedList, BulletList, DefinitionList
+export Header, HorizontalRule, Table, Div, Null
+
+export Str, Emph, Strong, Strikeout, Superscript, Subscript, SmallCaps
+export Quoted, Cite, Code, Space, LineBreak
+export Math, RawInline, Link, Image, Note, SoftBreak, Span
 
 using JSON
 
